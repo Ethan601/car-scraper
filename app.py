@@ -13,9 +13,14 @@ import logging
 import time
 from openai import OpenAI
 import os
+import sys
 
-# Initialize Flask app
-app = Flask(__name__)
+# Get the absolute path to the project directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+
+# Initialize Flask app with explicit template folder
+app = Flask(__name__, template_folder=TEMPLATE_DIR)
 CORS(app)
 
 # Configure logging
@@ -400,7 +405,11 @@ def summarize_description(description):
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        logger.error(f"Error rendering index: {e}")
+        return jsonify({'error': f'Template error: {str(e)}'}), 500
 
 
 @app.route('/api/search', methods=['POST'])
@@ -476,7 +485,9 @@ def health():
     return jsonify({
         'status': 'ok',
         'timestamp': datetime.now().isoformat(),
-        'openai_available': client is not None
+        'openai_available': client is not None,
+        'template_dir': TEMPLATE_DIR,
+        'template_exists': os.path.exists(os.path.join(TEMPLATE_DIR, 'index.html'))
     })
 
 
@@ -493,7 +504,8 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     """Handle 500 errors."""
-    return jsonify({'error': 'Internal server error'}), 500
+    logger.error(f"Internal error: {error}")
+    return jsonify({'error': 'Internal server error', 'details': str(error)}), 500
 
 
 # ============================================================================
@@ -503,5 +515,6 @@ def internal_error(error):
 if __name__ == '__main__':
     # Run the Flask app
     # In production, this will be handled by a WSGI server (e.g., Gunicorn)
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
 
