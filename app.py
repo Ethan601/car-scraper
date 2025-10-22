@@ -105,7 +105,7 @@ def scrape_kijiji(car_model, location="canada"):
         
         logger.info(f"Found {len(car_links)} car links on Kijiji")
         
-        for link in car_links[:20]:  # Limit to first 20 results
+        for link in car_links[:15]:  # Limit to first 15 results to save time
             try:
                 title = link.get_text(strip=True)
                 url = link.get('href', '')
@@ -123,7 +123,7 @@ def scrape_kijiji(car_model, location="canada"):
                 if year_match:
                     year = year_match.group(0)
                 
-                # Extract price from title or description
+                # Extract price from title
                 price = 'N/A'
                 price_match = re.search(r'\$[\d,]+(?:\.\d{2})?', title)
                 if price_match:
@@ -134,6 +134,26 @@ def scrape_kijiji(car_model, location="canada"):
                 km_match = re.search(r'(\d+(?:,\d+)?)\s*(?:km|KM)', title)
                 if km_match:
                     mileage = km_match.group(1) + ' km'
+                
+                # Try to get more details from the listing page
+                if not price or price == 'N/A':
+                    try:
+                        detail_response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+                        detail_soup = BeautifulSoup(detail_response.content, 'html.parser')
+                        detail_text = detail_soup.get_text()
+                        
+                        # Try to extract price from detail page
+                        price_match = re.search(r'\$[\d,]+(?:\.\d{2})?', detail_text)
+                        if price_match:
+                            price = price_match.group(0)
+                        
+                        # Try to extract mileage from detail page
+                        if mileage == 'N/A':
+                            km_match = re.search(r'(\d+(?:,\d+)?)\s*(?:km|KM)', detail_text)
+                            if km_match:
+                                mileage = km_match.group(1) + ' km'
+                    except:
+                        pass  # If detail page fails, just use what we have
                 
                 # Get description (first 200 chars of title)
                 description = title
@@ -147,7 +167,9 @@ def scrape_kijiji(car_model, location="canada"):
                     'year': year,
                     'description': description,
                     'url': url,
-                    'platform': 'Kijiji'
+                    'platform': 'Kijiji',
+                    'summary': None,
+                    'date_posted': 'N/A'
                 })
             
             except Exception as e:
@@ -231,7 +253,9 @@ def scrape_autotrader(car_model, location="canada"):
                         'year': year,
                         'description': f"Found on AutoTrader - {car_model}",
                         'url': search_url,
-                        'platform': 'AutoTrader'
+                        'platform': 'AutoTrader',
+                        'summary': None,
+                        'date_posted': 'N/A'
                     })
                 except:
                     continue
