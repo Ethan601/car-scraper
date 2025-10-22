@@ -492,10 +492,15 @@ def search_listings():
         
         logger.info(f"Total listings found: {len(all_listings)}")
         
+        # Rename 'source' to 'platform' for frontend compatibility
+        for listing in all_listings:
+            listing['platform'] = listing.pop('source', 'Unknown')
+        
         return jsonify({
             'success': True,
             'car_model': car_model,
             'location': location,
+            'count': len(all_listings),
             'total_listings': len(all_listings),
             'listings': all_listings,
             'timestamp': datetime.now().isoformat()
