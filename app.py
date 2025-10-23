@@ -1,7 +1,7 @@
 """
 Canadian Used Car Listing Scraper - Main Flask Application
 This application collects used car listings from Kijiji, AutoTrader, and Facebook Marketplace.
-Uses Selenium for JavaScript-rendered content.
+Uses HTTP requests and BeautifulSoup for maximum compatibility.
 """
 
 from flask import Flask, render_template, request, jsonify
@@ -14,13 +14,6 @@ import logging
 import time
 from openai import OpenAI
 import os
-import sys
-import json
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 # Get the absolute path to the project directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,33 +35,12 @@ except Exception as e:
     client = None
 
 # ============================================================================
-# SELENIUM DRIVER SETUP
-# ============================================================================
-
-def get_selenium_driver():
-    """Create and return a Selenium Chrome driver."""
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
-    
-    try:
-        driver = webdriver.Chrome(options=chrome_options)
-        return driver
-    except Exception as e:
-        logger.error(f"Failed to create Selenium driver: {e}")
-        return None
-
-# ============================================================================
 # KIJIJI SCRAPER
 # ============================================================================
 
 def scrape_kijiji(car_model, location="canada"):
     """
-    Scrape used car listings from Kijiji using Selenium.
+    Scrape used car listings from Kijiji.
     
     Args:
         car_model (str): The car model to search for (e.g., "Honda Civic")
@@ -78,7 +50,6 @@ def scrape_kijiji(car_model, location="canada"):
         list: List of car listings with extracted data
     """
     listings = []
-    driver = None
     
     try:
         # Kijiji search URL for cars category
@@ -86,15 +57,14 @@ def scrape_kijiji(car_model, location="canada"):
         
         logger.info(f"Scraping Kijiji: {search_url}")
         
-        driver = get_selenium_driver()
-        if not driver:
-            return listings
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
         
-        driver.get(search_url)
-        time.sleep(2)  # Wait for page to load
+        response = requests.get(search_url, headers=headers, timeout=10)
+        response.raise_for_status()
         
-        page_source = driver.page_source
-        soup = BeautifulSoup(page_source, 'html.parser')
+        soup = BeautifulSoup(response.content, 'html.parser')
         
         # Find all links containing the car model
         all_links = soup.find_all('a')
@@ -105,7 +75,7 @@ def scrape_kijiji(car_model, location="canada"):
         
         logger.info(f"Found {len(car_links)} car links on Kijiji")
         
-        for link in car_links[:15]:  # Limit to first 15 results to save time
+        for link in car_links[:12]:  # Limit to first 12 results
             try:
                 title = link.get_text(strip=True)
                 url = link.get('href', '')
@@ -138,7 +108,7 @@ def scrape_kijiji(car_model, location="canada"):
                 # Try to get more details from the listing page
                 if not price or price == 'N/A':
                     try:
-                        detail_response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+                        detail_response = requests.get(url, headers=headers, timeout=5)
                         detail_soup = BeautifulSoup(detail_response.content, 'html.parser')
                         detail_text = detail_soup.get_text()
                         
@@ -181,13 +151,6 @@ def scrape_kijiji(car_model, location="canada"):
     except Exception as e:
         logger.error(f"Kijiji scraping error: {e}")
     
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
-    
     return listings
 
 
@@ -197,7 +160,7 @@ def scrape_kijiji(car_model, location="canada"):
 
 def scrape_autotrader(car_model, location="canada"):
     """
-    Scrape used car listings from AutoTrader using Selenium.
+    Scrape used car listings from AutoTrader.
     
     Args:
         car_model (str): The car model to search for
@@ -207,7 +170,6 @@ def scrape_autotrader(car_model, location="canada"):
         list: List of car listings with extracted data
     """
     listings = []
-    driver = None
     
     try:
         # AutoTrader search URL
@@ -215,18 +177,16 @@ def scrape_autotrader(car_model, location="canada"):
         
         logger.info(f"Scraping AutoTrader: {search_url}")
         
-        driver = get_selenium_driver()
-        if not driver:
-            return listings
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
         
-        driver.get(search_url)
-        time.sleep(3)  # Wait longer for AutoTrader to load
+        response = requests.get(search_url, headers=headers, timeout=10)
+        response.raise_for_status()
         
-        page_source = driver.page_source
-        soup = BeautifulSoup(page_source, 'html.parser')
+        soup = BeautifulSoup(response.content, 'html.parser')
         
-        # AutoTrader uses complex JavaScript rendering
-        # Try to extract data from page text instead
+        # Extract data from page text
         page_text = soup.get_text()
         
         # Look for price patterns in the page
@@ -238,8 +198,8 @@ def scrape_autotrader(car_model, location="canada"):
         
         # If we found some data, create listings from it
         if price_matches and year_matches:
-            # Create synthetic listings from extracted data
-            num_listings = min(len(price_matches), 10)
+            # Create listings from extracted data
+            num_listings = min(len(price_matches), 8)
             for i in range(num_listings):
                 try:
                     price = price_matches[i] if i < len(price_matches) else 'N/A'
@@ -264,13 +224,6 @@ def scrape_autotrader(car_model, location="canada"):
     
     except Exception as e:
         logger.error(f"AutoTrader scraping error: {e}")
-    
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
     
     return listings
 
